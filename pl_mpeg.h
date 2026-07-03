@@ -3189,7 +3189,8 @@ void plm_video_decode_macroblock(plm_video_t *self) {
 	self->mb_row = self->macroblock_address / self->mb_width;
 	self->mb_col = self->macroblock_address % self->mb_width;
 
-	if (self->mb_col >= self->mb_width || self->mb_row >= self->mb_height) {
+	if (self->mb_col < 0 || self->mb_col >= self->mb_width ||
+		self->mb_row < 0 || self->mb_row >= self->mb_height) {
 		return; // corrupt stream;
 	}
 
@@ -3356,8 +3357,12 @@ void plm_video_process_macroblock(
 	unsigned int si = ((self->mb_row * block_size) + vp) * dw + (self->mb_col * block_size) + hp;
 	unsigned int di = (self->mb_row * dw + self->mb_col) * block_size;
 	
-	unsigned int max_address = (dw * (self->mb_height * block_size - block_size + 1) - block_size);
-	if (si > max_address || di > max_address) {
+	unsigned int plane_size = (unsigned int)dw * (self->mb_height * block_size);
+	unsigned int block_span = (unsigned int)(block_size - 1) * dw + (block_size - 1);
+	unsigned int src_extra = (odd_v ? (unsigned int)dw : 0) + (odd_h ? 1u : 0);
+	if (si >= plane_size || di >= plane_size ||
+		si + block_span + src_extra >= plane_size ||
+		di + block_span >= plane_size) {
 		return; // corrupt video
 	}
 
@@ -4026,7 +4031,7 @@ int plm_audio_decode_header(plm_audio_t *self) {
 	}
 
 	int bitrate_index = plm_buffer_read(self->buffer, 4) - 1;
-	if (bitrate_index > 13) {
+	if (bitrate_index < 0 || bitrate_index > 13) {
 		return 0;
 	}
 
