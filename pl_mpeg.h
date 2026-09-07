@@ -3357,7 +3357,10 @@ void plm_video_process_macroblock(
 	unsigned int di = (self->mb_row * dw + self->mb_col) * block_size;
 	
 	unsigned int max_address = (dw * (self->mb_height * block_size - block_size + 1) - block_size);
-	if (si > max_address || di > max_address) {
+	// Half-pel interpolation reads up to s[si + dw + 1], so the guard
+	// must account for the extra row/column (issue #73).
+	unsigned int hp_slack = (odd_v ? dw : 0) + (odd_h ? 1u : 0);
+	if (si + hp_slack > max_address || di > max_address) {
 		return; // corrupt video
 	}
 
@@ -3503,6 +3506,16 @@ void plm_video_decode_block(plm_video_t *self, int block) {
 		d = (block == 4) ? self->frame_current.cb.data : self->frame_current.cr.data;
 		dw = self->chroma_width;
 		di = ((self->mb_row * self->luma_width) << 2) + (self->mb_col << 3);
+	}
+
+	// Guard against out-of-bounds writes. The 8x8 block written below
+	// spans di .. di + 7*dw + 7. mb_row/mb_col can be negative or past
+	// the plane edge on corrupt streams (see issue #73), so bound the
+	// full write extent against the plane size.
+	int plane_size = (block < 4) ? (self->luma_width * self->luma_height)
+	                             : (self->chroma_width * self->chroma_height);
+	if (di < 0 || di + 7 * dw + 7 >= plane_size) {
+		return; // corrupt video
 	}
 
 	int *s = self->block_data;
